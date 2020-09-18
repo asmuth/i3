@@ -141,6 +141,55 @@ static bool tiling_resize(Con *con, xcb_button_press_event_t *event, const click
     return false;
 }
 
+static void route_click_floating_drag(Con *con, xcb_button_press_event_t *event) {
+    DLOG("floating resize due to custom click\n");
+    con_activate(con);
+
+    Con *floatingcon = con_inside_floating(con);
+    if (!floatingcon) {
+        return;
+    }
+
+    floating_drag_window(floatingcon, event, false);
+}
+
+static void route_click_floating_resize(Con *con, xcb_button_press_event_t *event, bool proportional) {
+    DLOG("floating resize due to custom click\n");
+    con_activate(con);
+
+    Con *floatingcon = con_inside_floating(con);
+    if (!floatingcon) {
+        return;
+    }
+
+    floating_resize_window(floatingcon, proportional, event);
+}
+
+static void route_click_custom(Con *con, Binding *bind, xcb_button_press_event_t *event) {
+    if (strcmp(bind->command, "floating_resize") == 0) {
+        route_click_floating_resize(con, event, false);
+        goto done;
+    }
+
+    if (strcmp(bind->command, "floating_resize_proportional") == 0) {
+        route_click_floating_resize(con, event, true);
+        goto done;
+    }
+
+    if (strcmp(bind->command, "floating_move") == 0) {
+        route_click_floating_drag(con, event);
+        goto done;
+    }
+
+    CommandResult *result = run_binding(bind, con);
+    command_result_free(result);
+
+done:
+    /* ASYNC_POINTER eats the event */
+    xcb_allow_events(conn, XCB_ALLOW_ASYNC_POINTER, event->time);
+    xcb_flush(conn);
+}
+
 /*
  * Being called by handle_button_press, this function calls the appropriate
  * functions for resizing/dragging.
@@ -161,13 +210,7 @@ static void route_click(Con *con, xcb_button_press_event_t *event, const bool mo
     if (bind && ((dest == CLICK_DECORATION && !bind->exclude_titlebar) ||
                  (dest == CLICK_INSIDE && bind->whole_window) ||
                  (dest == CLICK_BORDER && bind->border))) {
-        CommandResult *result = run_binding(bind, con);
-
-        /* ASYNC_POINTER eats the event */
-        xcb_allow_events(conn, XCB_ALLOW_ASYNC_POINTER, event->time);
-        xcb_flush(conn);
-
-        command_result_free(result);
+        route_click_custom(con, bind, event);
         return;
     }
 
